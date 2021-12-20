@@ -9,4 +9,4 @@ edition = "2021"
 futures = "*"
 tokio = { version = "1.13.0", features = ["full"] }
 tokio-util = { version = "*", features = ["codec"] }
-redis = { version = "*", features = ["tokio-comp"] }
+redis = { version = "*", features = ["tokio-comp", "streams"] }
