@@ -1,11 +1,9 @@
 use std::str;
 use std::process::Stdio;
-use std::io::ErrorKind;
 
 use redis::FromRedisValue;
 //use redis::AsyncCommands;
-use redis::streams::{StreamReadOptions, StreamReadReply};
-use tokio::io::AsyncWriteExt;
+use redis::streams::StreamReadReply;
 use tokio::process::Command;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use futures::prelude::*;
@@ -16,16 +14,6 @@ async fn main() { //-> redis::RedisResult<()> {
     let mut rdconn = rd_client.get_multiplexed_async_connection().await.expect("could not estalbish redis connection");
 
     loop {
-        /*
-        let res: Vec<String> = redis::cmd("BLPOP")
-            .arg(&["jobQueue", "0"])
-            .query_async(&mut rdconn)
-            .await
-            .expect("could not execute redis command");
-            */
-
-        //println!("{}", res[1]);
-
         let queue: StreamReadReply = redis::cmd("XREAD")
             .arg(&["BLOCK", "0", "STREAMS", "jobStream", "$"])
             .query_async(&mut rdconn)
@@ -48,15 +36,23 @@ async fn main() { //-> redis::RedisResult<()> {
                         let mut reader = FramedRead::new(stdout, LinesCodec::new());
                         while let Some(line) = reader.next().await {
                             //println!("{}", line.unwrap());
-                            let _: Vec<u8> = redis::cmd("XADD")
-                                .arg(&[format!("{}_output", id), "*".to_string(), "line".to_string(), line.unwrap()])
-                                .query_async(&mut rdconn)
-                                .await
-                                .expect("could not execute redis command");
+                            match line {
+                                Ok(l) => {
+                                    let _: Vec<u8> = redis::cmd("XADD")
+                                        .arg(&[format!("{}_output", id), "*".to_string(), "line".to_string(), l])
+                                        .query_async(&mut rdconn)
+                                        .await
+                                        .expect("could not execute redis command");
+                                }
+                                Err(e) => {
+                                    eprintln!("Error: {:?}", e);
+                                }
+                            }
+                            
                         }
                     }
                     _ => {
-                        panic!("err");
+                        continue;
                     }
                 }
             }
@@ -65,22 +61,6 @@ async fn main() { //-> redis::RedisResult<()> {
                 continue;
             }
         }
-        
-
-            /*
-        let mut child = Command::new("bash")
-            .arg("-c")
-            .arg(&res[1])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to execute command");
-        let stdout = child.stdout.take().unwrap();
-        let mut reader = FramedRead::new(stdout, LinesCodec::new());
-        while let Some(line) = reader.next().await {
-            //println!("{}", line.unwrap());
-            stream.write(format!("{}\n", line.unwrap()).as_bytes()).await.expect("failed to write");
-        }
-        */
     }
 
     //Ok(())
