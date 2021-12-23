@@ -21,6 +21,27 @@ async fn main() { //-> redis::RedisResult<()> {
             .expect("could not execute redis command");
         
         let id = queue.keys[0].ids[0].id.clone();
+
+        let parallel_num: u32 = match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["num"]) {
+            Ok(v) => {
+                match v {
+                    redis::Value::Data(d) => {
+                        let s = str::from_utf8(&d).unwrap();
+                        match s.parse() {
+                            Ok(n) => n,
+                            Err(_) => continue
+                        }
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {:?}", e);
+                continue;
+            }
+        };
         
         match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["script"]) {
             Ok(v) => {
