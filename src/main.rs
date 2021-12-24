@@ -11,7 +11,7 @@ use redis::streams::StreamReadReply;
 use tokio::process::Command;
 use tokio_util::codec::{FramedRead, LinesCodec};
 
-struct node {
+struct Node {
     hostname: String,
     cores_total: u32,
     cores_free: u32,
@@ -26,7 +26,7 @@ async fn main() {
         .await
         .expect("could not estalbish redis connection");
 
-    let cpu_cores: Vec<node> = Vec::new();
+    let mut cpu_cores: Vec<Node> = Vec::new();
 
     let nodes = match redis::cmd("SMEMBERS")
         .arg(&["nodes"])
@@ -38,11 +38,43 @@ async fn main() {
         _ => panic!("error"),
     };
 
-    /*
     for i in nodes {
-        i
+        let hostname = match FromRedisValue::from_redis_value(&i) {
+            Ok(redis::Value::Data(d)) => {
+                match str::from_utf8(&d) {
+                    Ok(s) => s.to_string(),
+                    Err(e) => panic!("error: {:?}", e)
+                }
+            }
+            _ => continue,
+        };
+        let cores: u32 = match redis::cmd("HGET")
+            .arg(&[format!("{}_status", hostname), "cpu_num".to_string()])
+            .query_async(&mut rdconn)
+            .await
+        {
+            Ok(redis::Value::Data(d)) => {
+                match str::from_utf8(&d) {
+                    Ok(s) => {
+                        match s.parse() {
+                            Ok(n) => n,
+                            Err(e) => panic!("error: {:?}", e),
+                        }
+                    }
+                    Err(e) => panic!("error: {:?}", e),
+                }
+            }
+            default => panic!("error: {:?}", default)
+        };
+
+        cpu_cores.push(
+            Node {
+                hostname: hostname,
+                cores_total: cores,
+                cores_free: cores
+            }
+        );
     }
-    */
 
     loop {
         let queue: StreamReadReply = redis::cmd("XREAD")
