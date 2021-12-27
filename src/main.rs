@@ -83,6 +83,20 @@ async fn main() {
             .await
             .expect("could not execute redis command");
         let id = queue.keys[0].ids[0].id.clone();
+        println!("a");
+
+        let work_dir: String = 
+            match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["dir"]) {
+                Ok(v) => match v {
+                    redis::Value::Data(d) => str::from_utf8(&d).unwrap().to_string(),
+                    _ => continue
+                }
+                Err(e) => {
+                    eprintln!("Error: {:?}", e);
+                    continue;
+                }
+            };
+        println!("b");
 
         let parallel_num: u32 =
             match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["num"]) {
@@ -103,13 +117,15 @@ async fn main() {
                     continue;
                 }
             };
+        println!("c");
+        
         match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["script"]) {
             Ok(v) => {
                 match v {
                     redis::Value::Data(d) => {
                         let mut child = Command::new("bash")
                             .arg("-c")
-                            .arg(str::from_utf8(&d).unwrap())
+                            .arg(format!("cd {};echo {};{}", work_dir, parallel_num, str::from_utf8(&d).unwrap()))
                             .stdout(Stdio::piped())
                             .spawn()
                             .expect("Failed to execute command");
@@ -119,6 +135,7 @@ async fn main() {
                             //println!("{}", line.unwrap());
                             match line {
                                 Ok(l) => {
+                                    println!("{}", &l);
                                     let _: Vec<u8> = redis::cmd("XADD")
                                         .arg(&[
                                             format!("{}_output", id),
