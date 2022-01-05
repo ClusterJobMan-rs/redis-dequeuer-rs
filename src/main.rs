@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Error, Write};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::str;
 
@@ -15,6 +16,18 @@ struct Node {
     hostname: String,
     cores_total: u32,
     cores_free: u32,
+}
+
+fn create_hostfile(mut dir: String) {
+    dir = dir.trim_end_matches("/").to_string();
+    let path = PathBuf::from(dir + "/hosts");
+    let mut file = match File::create(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Error: {:?}", e);
+            return;
+        }
+    };
 }
 
 #[tokio::main]
@@ -40,12 +53,10 @@ async fn main() {
 
     for i in nodes {
         let hostname = match FromRedisValue::from_redis_value(&i) {
-            Ok(redis::Value::Data(d)) => {
-                match str::from_utf8(&d) {
-                    Ok(s) => s.to_string(),
-                    Err(e) => panic!("error: {:?}", e)
-                }
-            }
+            Ok(redis::Value::Data(d)) => match str::from_utf8(&d) {
+                Ok(s) => s.to_string(),
+                Err(e) => panic!("error: {:?}", e),
+            },
             _ => continue,
         };
         let cores: u32 = match redis::cmd("HGET")
@@ -53,27 +64,21 @@ async fn main() {
             .query_async(&mut rdconn)
             .await
         {
-            Ok(redis::Value::Data(d)) => {
-                match str::from_utf8(&d) {
-                    Ok(s) => {
-                        match s.parse() {
-                            Ok(n) => n,
-                            Err(e) => panic!("error: {:?}", e),
-                        }
-                    }
+            Ok(redis::Value::Data(d)) => match str::from_utf8(&d) {
+                Ok(s) => match s.parse() {
+                    Ok(n) => n,
                     Err(e) => panic!("error: {:?}", e),
-                }
-            }
-            default => panic!("error: {:?}", default)
+                },
+                Err(e) => panic!("error: {:?}", e),
+            },
+            default => panic!("error: {:?}", default),
         };
 
-        cpu_cores.push(
-            Node {
-                hostname: hostname,
-                cores_total: cores,
-                cores_free: cores
-            }
-        );
+        cpu_cores.push(Node {
+            hostname: hostname,
+            cores_total: cores,
+            cores_free: cores,
+        });
     }
 
     loop {
@@ -85,12 +90,16 @@ async fn main() {
         let id = queue.keys[0].ids[0].id.clone();
         println!("a");
 
-        let work_dir: String = 
+        let work_dir: String =
             match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["dir"]) {
                 Ok(v) => match v {
-                    redis::Value::Data(d) => str::from_utf8(&d).unwrap().to_string(),
-                    _ => continue
-                }
+                    redis::Value::Data(d) => str::from_utf8(&d)
+                        .unwrap()
+                        .to_string()
+                        .trim_end_matches("/")
+                        .to_string(),
+                    _ => continue,
+                },
                 Err(e) => {
                     eprintln!("Error: {:?}", e);
                     continue;
@@ -118,14 +127,45 @@ async fn main() {
                 }
             };
         println!("c");
-        
+        let path = PathBuf::from(work_dir.clone() + "/hosts");
+        let mut file = match File::create(path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Error: {:?}", e);
+                return;
+            }
+        };
+
+        let hosts: Vec<String> = Vec::new();
+        for n in 1..cpu_cores.len() as u32 {
+            let thread_per_cpu: u32 = match parallel_num % n {
+                0 => parallel_num / n,
+                _ => break,
+            };
+            for i in 0..cpu_cores.len() {
+                if cpu_cores[i].cores_free >= thread_per_cpu {
+                    cpu_cores[i].cores_free -= thread_per_cpu;
+                    file.write_all(
+                        format!("{} slots={}", cpu_cores[i].hostname, thread_per_cpu).as_bytes(),
+                    )
+                    .unwrap();
+                    break;
+                }
+            }
+        }
+        //create_hostfile(work_dir.clone());
         match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["script"]) {
             Ok(v) => {
                 match v {
                     redis::Value::Data(d) => {
                         let mut child = Command::new("bash")
                             .arg("-c")
-                            .arg(format!("cd {};echo {};{}", work_dir, parallel_num, str::from_utf8(&d).unwrap()))
+                            .arg(format!(
+                                "cd {};echo {};{}",
+                                work_dir,
+                                parallel_num,
+                                str::from_utf8(&d).unwrap()
+                            ))
                             .stdout(Stdio::piped())
                             .spawn()
                             .expect("Failed to execute command");
