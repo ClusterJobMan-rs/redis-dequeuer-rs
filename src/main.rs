@@ -136,7 +136,7 @@ async fn main() {
             }
         };
 
-        let hosts: Vec<String> = Vec::new();
+        let mut hosts: HashMap<String, u32> = HashMap::new();
         for n in 1..cpu_cores.len() as u32 {
             let thread_per_cpu: u32 = match parallel_num % n {
                 0 => parallel_num / n,
@@ -149,10 +149,12 @@ async fn main() {
                         format!("{} slots={}", cpu_cores[i].hostname, thread_per_cpu).as_bytes(),
                     )
                     .unwrap();
+                    hosts.insert(cpu_cores[i].hostname.clone(), thread_per_cpu);
                     break;
                 }
             }
         }
+
         //create_hostfile(work_dir.clone());
         match FromRedisValue::from_redis_value(&queue.keys[0].ids[0].map["script"]) {
             Ok(v) => {
@@ -189,6 +191,14 @@ async fn main() {
                                 }
                                 Err(e) => {
                                     eprintln!("Error: {:?}", e);
+                                }
+                            }
+                        }
+                        for (name, n) in hosts {
+                            for i in 0..cpu_cores.len() {
+                                if cpu_cores[i].hostname == name {
+                                    cpu_cores[i].cores_free -= n;
+                                    break;
                                 }
                             }
                         }
