@@ -1,6 +1,7 @@
+use std::env;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, Error, Write};
+use std::io::{self, Error, Write, BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::str;
@@ -18,26 +19,24 @@ struct Node {
     cores_free: u32,
 }
 
-fn create_hostfile(mut dir: String) {
-    dir = dir.trim_end_matches("/").to_string();
-    let path = PathBuf::from(dir + "/hosts");
-    let mut file = match File::create(path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("Error: {:?}", e);
-            return;
-        }
-    };
-}
-
 #[tokio::main]
 async fn main() {
-    //-> redis::RedisResult<()> {
-    let rd_client = redis::Client::open("redis://127.0.0.1").unwrap();
+    let args: Vec<String> = env::args().collect();
+    let redisaddr = &args[0];
+
+    
+    let rd_client = redis::Client::open(format!("redis://{}", redisaddr)).unwrap();
     let mut rdconn = rd_client
         .get_multiplexed_async_connection()
         .await
         .expect("could not estalbish redis connection");
+    
+    for a in BufReader::new(File::open("nodes").unwrap()).lines() {
+        let _ = match redis::Cmd::sadd("nodes", a.unwrap()).query_async(&mut rdconn).await.unwrap() {
+            redis::Value::Int(r) => r,
+            _ => panic!("could not execute command")
+        };
+    }
 
     let mut cpu_cores: Vec<Node> = Vec::new();
 
