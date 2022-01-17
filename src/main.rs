@@ -22,7 +22,7 @@ struct Node {
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = env::args().collect();
-    let redisaddr = &args[0];
+    let redisaddr = &args[1];
 
     
     let rd_client = redis::Client::open(format!("redis://{}", redisaddr)).unwrap();
