@@ -1,7 +1,7 @@
 use std::env;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, Error, Write, BufRead, BufReader};
+use std::io::{self, Error, Write, BufRead, BufReader, BufWriter};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::str;
@@ -127,13 +127,15 @@ async fn main() {
             };
         println!("c");
         let path = PathBuf::from(work_dir.clone() + "/hosts");
-        let mut file = match File::create(path) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("Error: {:?}", e);
-                return;
+        let mut file = BufWriter::new(
+            match File::create(path) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("Error: {:?}", e);
+                    return;
+                }
             }
-        };
+        );
 
         let mut hosts: HashMap<String, u32> = HashMap::new();
         for n in 1..cpu_cores.len() as u32 {
@@ -142,10 +144,12 @@ async fn main() {
                 _ => break,
             };
             for i in 0..cpu_cores.len() {
+                println!("thread_per_cpu={}, cpu_cores[{}].cores_free={}", thread_per_cpu, i, cpu_cores[i].cores_free);
                 if cpu_cores[i].cores_free >= thread_per_cpu {
                     cpu_cores[i].cores_free -= thread_per_cpu;
+                    println!("{} slots={}\n", cpu_cores[i].hostname, thread_per_cpu);
                     file.write_all(
-                        format!("{} slots={}", cpu_cores[i].hostname, thread_per_cpu).as_bytes(),
+                        format!("{} slots={}\n", cpu_cores[i].hostname, thread_per_cpu).as_bytes(),
                     )
                     .unwrap();
                     hosts.insert(cpu_cores[i].hostname.clone(), thread_per_cpu);
