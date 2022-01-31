@@ -200,7 +200,7 @@ async fn main() {
                         for (name, n) in hosts {
                             for i in 0..cpu_cores.len() {
                                 if cpu_cores[i].hostname == name {
-                                    cpu_cores[i].cores_free -= n;
+                                    cpu_cores[i].cores_free += n;
                                     break;
                                 }
                             }
